@@ -48,7 +48,8 @@ body{background:var(--desk);color:var(--fg);font:13px/1.5 var(--sans);overflow:h
 .muted{color:var(--muted)}
 .grid{display:grid;gap:10px}
 .cards{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}
-.card{border:1px solid var(--line);background:var(--win);padding:0;cursor:pointer;text-align:center;font:inherit;color:inherit}
+.cards{align-items:start}
+.card{display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;border:1px solid var(--line);background:var(--win);padding:0;cursor:pointer;text-align:center;font:inherit;color:inherit}
 .card .pic{aspect-ratio:1/1.7;background:var(--soft);display:flex;align-items:center;justify-content:center;color:var(--muted);border-bottom:1px solid var(--line)}
 .card .nm{padding:4px;word-break:break-all}
 .field{display:grid;grid-template-columns:90px minmax(0,1fr);gap:6px;align-items:start;margin-bottom:6px}
