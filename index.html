@@ -32,7 +32,7 @@ body{background:var(--desk);color:var(--fg);font:13px/1.5 var(--sans);overflow:h
 .tbar{display:flex;align-items:center;gap:6px;padding:3px 4px 3px 8px;background:var(--bar);border-bottom:1px solid var(--line);cursor:move;touch-action:none;user-select:none}
 .tbar .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
 .tbar button{padding:0 8px;min-width:26px}
-.wbody{flex:1;min-height:0;overflow:auto;padding:10px}
+.wbody{flex:1;min-height:0;overflow:auto;padding:10px;scrollbar-gutter:stable}
 .rs{position:absolute;touch-action:none}
 .rs.r{right:-4px;top:0;bottom:0;width:8px;cursor:ew-resize}
 .rs.b{bottom:-4px;left:0;right:0;height:8px;cursor:ns-resize}
@@ -49,9 +49,10 @@ body{background:var(--desk);color:var(--fg);font:13px/1.5 var(--sans);overflow:h
 .grid{display:grid;gap:10px}
 .cards{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}
 .cards{align-items:start}
+.cards.works{grid-template-columns:repeat(auto-fill,minmax(135px,1fr))}
 .card{display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;border:1px solid var(--line);background:var(--win);padding:0;cursor:pointer;text-align:center;font:inherit;color:inherit}
 .card .pic{aspect-ratio:1/1.7;background:var(--soft);display:flex;align-items:center;justify-content:center;color:var(--muted);border-bottom:1px solid var(--line)}
-.card .nm{padding:4px;word-break:break-all}
+.card .nm{padding:4px;word-break:break-all;height:47px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 .field{display:grid;grid-template-columns:90px minmax(0,1fr);gap:6px;align-items:start;margin-bottom:6px}
 .field>label{color:var(--muted);padding-top:3px}
 input[type=text],input[type=date],input[type=number],textarea,select{font:inherit;color:var(--fg);background:var(--win);border:1px solid var(--line);padding:3px 5px;max-width:100%;min-width:0}
@@ -949,7 +950,7 @@ APPS.works={title:'작품',w:620,h:520,
     if(ui.open&&!k) ui.open=null;
     if(!k){
       b.innerHTML='<div class="row" style="margin-bottom:8px"><b class="grow">작품 '+S.works.length+'개</b><button type="button" data-act="add">새 작품</button></div>'+
-        (S.works.length?'<div class="grid cards">'+S.works.map(x=>'<button type="button" class="card" data-act="open" data-i="'+x.id+'"><div class="pic" style="aspect-ratio:2/3;overflow:hidden">'+workThumb(x)+'</div><div class="nm">'+esc(x.title||'(제목 없음)')+'</div></button>').join('')+'</div>':'<div class="muted">등록한 작품이 없어요</div>');
+        (S.works.length?'<div class="grid cards works">'+S.works.map(x=>'<button type="button" class="card" data-act="open" data-i="'+x.id+'"><div class="pic" style="aspect-ratio:2/3;overflow:hidden">'+workThumb(x)+'</div><div class="nm">'+esc(x.title||'(제목 없음)')+'</div></button>').join('')+'</div>':'<div class="muted">등록한 작품이 없어요</div>');
       return;
     }
     const autoChars=S.chars.filter(c=>charWorks(c).has(k.id)&&!(k.charIds||[]).includes(c.id));
