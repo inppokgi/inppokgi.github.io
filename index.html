@@ -51,7 +51,7 @@ body{background:var(--desk);color:var(--fg);font:13px/1.5 var(--sans);overflow:h
 .cards{align-items:start}
 .cards.works{grid-template-columns:repeat(auto-fill,minmax(135px,1fr))}
 .card{display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;border:1px solid var(--line);background:var(--win);padding:0;cursor:pointer;text-align:center;font:inherit;color:inherit}
-.card .pic{aspect-ratio:1/1.7;background:var(--soft);display:flex;align-items:center;justify-content:center;color:var(--muted);border-bottom:1px solid var(--line)}
+.card .pic{overflow:hidden;aspect-ratio:1/1.7;background:var(--soft);display:flex;align-items:center;justify-content:center;color:var(--muted);border-bottom:1px solid var(--line)}
 .card .nm{padding:4px;word-break:break-all;height:47px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 .field{display:grid;grid-template-columns:90px minmax(0,1fr);gap:6px;align-items:start;margin-bottom:6px}
 .field>label{color:var(--muted);padding-top:3px}
@@ -80,7 +80,9 @@ textarea{min-height:64px;resize:vertical}
 .note .sh{display:flex;justify-content:space-between;gap:4px;padding:1px 3px;background:var(--bar);border-bottom:1px solid var(--line);cursor:move;touch-action:none;user-select:none}
 .note textarea{border:0;min-height:60px;display:block}
 .note.pick{outline:2px dashed var(--fg)}
-.sr{position:absolute;left:-9999px}
+.cropov{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+.cropbox{background:var(--win);color:var(--fg);border:1px solid var(--fg);padding:10px;max-width:100%;max-height:100%;overflow:auto}
+.cropbox canvas{display:block;margin:0 auto;border:1px solid var(--line);touch-action:none;cursor:grab;background:var(--soft)}
 @media (max-width:640px){
   #widgets{width:150px}
   .icon{width:60px}.icon .sq{width:44px;height:44px}
@@ -524,6 +526,75 @@ function deleteMemo(id){
   save(); renderStickies(); refreshWin('memo'); refreshWin('trash');
 }
 
+/* ---------- 이미지: 자르기 + 저장 ---------- */
+const imgSrc=v=>!v?'':(String(v).startsWith('data:')?v:'/_blob/'+v);
+const imgTag=v=>'<img src="'+esc(imgSrc(v))+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block">';
+function blobToData(b){return new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>res('');r.readAsDataURL(b);});}
+async function storeImage(blob){
+  try{
+    const c=window.claude,a=c&&c.use?await c.use('assets'):null;
+    if(a){const r=await a.upload(blob);if(r&&r.id) return r.id;}
+  }catch(e){}
+  return await blobToData(blob);
+}
+function cropImage(file,opt,cb){
+  const url=URL.createObjectURL(file),im=new Image();
+  im.onerror=()=>{URL.revokeObjectURL(url);cb(null);};
+  im.onload=()=>{
+    const choices=opt.choices||null;
+    let aspect=opt.aspect,z=1,W,H,minS,s,ox,oy;
+    const ov=document.createElement('div');
+    ov.className='cropov';
+    ov.innerHTML='<div class="cropbox" role="dialog" aria-label="이미지 자르기"><canvas id="crc"></canvas>'+
+      '<div class="row" style="margin-top:8px"><label for="crz">확대</label><input type="range" id="crz" min="1" max="4" step="0.01" value="1" class="grow"></div>'+
+      (choices?'<div class="row" style="margin-top:6px"><label for="cra">비율</label><select id="cra">'+choices.map(c=>'<option value="'+c[0]+'">'+c[1]+'</option>').join('')+'</select></div>':'')+
+      '<div class="muted" style="margin:6px 0">이미지를 끌어서 위치를 맞춰요</div>'+
+      '<div class="row"><button type="button" id="cro">적용</button><button type="button" id="crx">취소</button></div></div>';
+    document.body.appendChild(ov);
+    const cv=$('#crc',ov),ctx=cv.getContext('2d');
+    const clamp=()=>{ox=Math.min(0,Math.max(W-im.width*s,ox));oy=Math.min(0,Math.max(H-im.height*s,oy));};
+    const draw=()=>{ctx.clearRect(0,0,W,H);ctx.drawImage(im,ox,oy,im.width*s,im.height*s);};
+    function layout(){
+      const maxH=Math.min(360,Math.max(160,window.innerHeight-260)),maxW=Math.min(300,window.innerWidth-80);
+      H=maxH;W=H*aspect; if(W>maxW){W=maxW;H=W/aspect;}
+      W=Math.round(W);H=Math.round(H);
+      cv.width=W;cv.height=H;cv.style.width=W+'px';cv.style.height=H+'px';
+      minS=Math.max(W/im.width,H/im.height); s=minS*z;
+      ox=(W-im.width*s)/2; oy=(H-im.height*s)/2; clamp(); draw();
+    }
+    function close(res,asp){
+      document.removeEventListener('keydown',onKey);
+      ov.remove(); URL.revokeObjectURL(url); cb(res,asp);
+    }
+    const onKey=e=>{if(e.key==='Escape') close(null);};
+    document.addEventListener('keydown',onKey);
+    $('#crz',ov).addEventListener('input',e=>{
+      z=parseFloat(e.target.value);
+      const cx=(W/2-ox)/s,cy=(H/2-oy)/s;
+      s=minS*z; ox=W/2-cx*s; oy=H/2-cy*s; clamp(); draw();
+    });
+    const sel=$('#cra',ov);
+    if(sel) sel.addEventListener('change',()=>{aspect=parseFloat(sel.value);z=1;$('#crz',ov).value=1;layout();});
+    cv.addEventListener('pointerdown',e=>{
+      e.preventDefault(); cv.setPointerCapture(e.pointerId);
+      let lx=e.clientX,ly=e.clientY;
+      const mv=ev=>{ox+=ev.clientX-lx;oy+=ev.clientY-ly;lx=ev.clientX;ly=ev.clientY;clamp();draw();};
+      const up=()=>{cv.removeEventListener('pointermove',mv);cv.removeEventListener('pointerup',up);cv.removeEventListener('pointercancel',up);};
+      cv.addEventListener('pointermove',mv);cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+    });
+    $('#crx',ov).addEventListener('click',()=>close(null));
+    $('#cro',ov).addEventListener('click',()=>{
+      const k=Math.min(680/H,1/s),ow=Math.max(1,Math.round(W*k)),oh=Math.max(1,Math.round(H*k));
+      const out=document.createElement('canvas'); out.width=ow; out.height=oh;
+      out.getContext('2d').drawImage(im,-ox/s,-oy/s,W/s,H/s,0,0,ow,oh);
+      out.toBlob(b=>close(b,aspect),'image/jpeg',0.88);
+    });
+    layout();
+    $('#cro',ov).focus();
+  };
+  im.src=url;
+}
+
 /* ---------- 공통 헬퍼 ---------- */
 const WORLD=id=>S.worlds.find(w=>w.id===id);
 const WORK=id=>S.works.find(w=>w.id===id);
@@ -807,7 +878,7 @@ function charListView(ui){
      '<select aria-label="소속" data-s="__fA">'+opt(r.sub[1].map(x=>[x,x]),ui.fA,'소속 전체')+'</select>'+
      '<select aria-label="분류" data-s="__fC">'+opt(r.sub[2].map(x=>[x,x]),ui.fC,'분류 전체')+'</select>'+
      '<span style="flex:1"></span><button type="button" data-act="newChar">새 캐릭터</button></div>';
-  h+=r.list.length?'<div class="grid cards">'+r.list.map(c=>'<button type="button" class="card" data-act="openChar" data-i="'+c.id+'"><div class="pic">대표 이미지</div><div class="nm">'+esc(charName(c))+'</div></button>').join('')+'</div>':
+  h+=r.list.length?'<div class="grid cards">'+r.list.map(c=>'<button type="button" class="card" data-act="openChar" data-i="'+c.id+'"><div class="pic">'+(c.versions[0].d.imgMain?imgTag(c.versions[0].d.imgMain):'대표 이미지')+'</div><div class="nm">'+esc(charName(c))+'</div></button>').join('')+'</div>':
     '<div class="muted">조건에 맞는 캐릭터가 없어요</div>';
   return h;
 }
@@ -821,10 +892,12 @@ function charDetailView(ch,ui){
     '<input type="text" class="grow" aria-label="버전 이름" placeholder="예: 사건 이전" data-f="label" data-s="ver" value="'+esc(v.label)+'">'+
     '<button type="button" data-act="dupVer">현재 정보로 새 버전</button>'+
     (ch.versions.length>1?'<button type="button" data-act="delVer">이 버전 삭제</button>':'')+'</div></div>';
-  h+='<div class="panel"><div class="row" style="align-items:flex-start">'+
-    '<div style="width:110px"><div class="card" style="cursor:default"><div class="pic" style="border:0">대표 이미지</div></div></div>'+
-    '<div style="width:110px"><div class="card" style="cursor:default"><div class="pic" style="border:0">전신</div></div></div>'+
-    '<div class="muted" style="flex:1;min-width:140px">이미지 영역 (1 : 1.7). 업로드는 다음 단계에서 붙여요.</div></div></div>';
+  const fa=d.imgFullAspect||(1/1.7);
+  const imgBox=(label,fld,val,asp)=>'<div style="width:150px"><div class="card" style="cursor:default"><div class="pic" style="border:0;aspect-ratio:'+asp+'">'+(val?imgTag(val):label)+'</div></div>'+
+    '<div class="muted" style="margin:4px 0">'+label+'</div><input type="file" accept="image/*" style="width:100%" aria-label="'+label+' 선택" data-s="__img" data-f="'+fld+'">'+
+    (val?'<button type="button" data-act="rmImg" data-f="'+fld+'" style="margin-top:4px">지우기</button>':'')+'</div>';
+  h+='<div class="panel"><h3>이미지</h3><div class="row" style="align-items:flex-start;gap:14px">'+imgBox('대표 이미지 (1 : 1.7)','imgMain',d.imgMain,'1/1.7')+imgBox('전신','imgFull',d.imgFull,fa)+'</div>'+
+    '<div class="muted" style="margin-top:6px">이미지를 고르면 자르기 창이 열려요.</div></div>';
   h+='<div class="panel"><h3>기본 정보</h3>'+
     fieldRow('세계관','<select id="c-w" data-f="worldId" data-s="char">'+opt(S.worlds.map(x=>[x.id,x.name+(x.version?' ('+x.version+')':'')]),ch.worldId)+'</select>','c-w')+
     fieldRow('이름','<input type="text" id="c-n" '+at('name')+' value="'+esc(d.name)+'">','c-n')+
@@ -879,6 +952,20 @@ APPS.chars={title:'캐릭터',w:700,h:540,
     const ch=S.chars.find(x=>x.id===ui.open); if(!ch) return;
     if(s==='__ver'){ui.ver=t.value;rerender('chars');return;}
     const v=ch.versions.find(x=>x.id===ui.ver)||ch.versions[0],d=v.d,f=t.dataset.f,i=t.dataset.i;
+    if(s==='__img'){
+      const file=t.files&&t.files[0]; if(!file) return;
+      const fld=t.dataset.f,full=fld==='imgFull';
+      cropImage(file,full?{aspect:1/1.7,choices:[[1/1.7,'1 : 1.7'],[0.5,'1 : 2'],[2/3,'2 : 3'],[1,'1 : 1']]}:{aspect:1/1.7},(blob,asp)=>{
+        t.value='';
+        if(!blob) return;
+        storeImage(blob).then(id=>{
+          if(!id) return;
+          d[fld]=id; if(full) d.imgFullAspect=asp;
+          save(); rerender('chars');
+        });
+      });
+      return;
+    }
     if(s==='ver') v.label=t.value;
     else if(s==='char'){ch.worldId=t.value;d.affiliation='';d.category='';d.gender=d.gender;}
     else if(s==='d') d[f]=t.value;
@@ -914,6 +1001,7 @@ APPS.chars={title:'캐릭터',w:700,h:540,
     else if(a==='delVer'&&ch&&ch.versions.length>1){
       ch.versions=ch.versions.filter(x=>x.id!==v.id); ui.ver=ch.versions[0].id;
     }
+    else if(a==='rmImg'&&v){v.d[t.dataset.f]='';}
     else if(a==='addPrompt'&&v){v.d.prompts.push({id:uid(),text:''});}
     else if(a==='delPrompt'&&v){v.d.prompts=v.d.prompts.filter(p=>p.id!==i);}
     else if(a==='addRel'&&v){v.d.relations.push({id:uid(),targetId:'',thought:''});}
@@ -925,7 +1013,7 @@ APPS.chars={title:'캐릭터',w:700,h:540,
 
 /* ---------- 작품 ---------- */
 function workThumb(k){
-  return k.thumb?'<img src="'+k.thumb+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block">':'썸네일';
+  return k.thumb?imgTag(k.thumb):'썸네일';
 }
 function resizeThumb(file,cb){
   const fr=new FileReader();
@@ -988,7 +1076,7 @@ APPS.works={title:'작품',w:620,h:520,
     }
     if(f==='__thumb'){
       const file=t.files&&t.files[0]; if(!file) return;
-      resizeThumb(file,data=>{ if(!data) return; k.thumb=data; save(); rerender('works'); });
+      cropImage(file,{aspect:2/3},blob=>{ t.value=''; if(!blob) return; storeImage(blob).then(id=>{ if(!id) return; k.thumb=id; save(); rerender('works'); }); });
       return;
     }
     k[f]=t.value; save();
